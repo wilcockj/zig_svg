@@ -1,64 +1,51 @@
 const std = @import("std");
 const zig_svg_graph = @import("zig_svg_graph");
 
-pub fn seekEndOfFile(file: std.fs.File) !void {
-    const stat = try file.stat();
-    try file.seekTo(stat.size); // Position the cursor at the end
-}
-
 const SvgContainer = struct {
     filename: []const u8,
+    file: std.fs.File,
+    pub fn open(filename: []const u8) !SvgContainer {
+        return .{
+            .filename = filename,
+            .file = try std.fs.cwd().createFile(filename, .{ .read = true }),
+        };
+    }
+
+    pub fn writeToSvgFile(self: SvgContainer, msg: []const u8) !void {
+        try self.file.writeAll(msg);
+    }
 
     pub fn genBasicSvgFileHeader(self: SvgContainer) !void {
-        const file = try std.fs.cwd().createFile(
-            self.filename,
-            .{ .read = true },
-        );
-        defer file.close();
-
-        try file.writeAll("<svg version=\"1.1\" xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 100 100\">\n");
+        try self.writeToSvgFile("<svg version=\"1.1\" xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 100 100\">\n");
     }
 
     pub fn addBasicSvgSuffix(self: SvgContainer) !void {
-        const file = try std.fs.cwd().openFile(self.filename, .{ .mode = .read_write });
-        defer file.close();
-        try seekEndOfFile(file);
-        try file.writeAll("</svg>");
+        try self.writeToSvgFile("</svg>");
     }
 
     pub fn addSvgCircle(self: SvgContainer, circle: SvgCircle) !void {
-        const file = try std.fs.cwd().openFile(self.filename, .{ .mode = .read_write });
-        defer file.close();
-        try seekEndOfFile(file);
-
         var buffer: [1024]u8 = undefined; // Buffer must be large enough
 
-        var msg: ?[]u8 = null;
         // Formats into the stack-allocated buffer
-        switch (circle.color) {
-            SvgColorTypeTag.named => {
-                msg = try std.fmt.bufPrint(&buffer, "<circle xmlns=\"http://www.w3.org/2000/svg\" cx=\"{d}\" cy=\"{d}\" r=\"{d}\" fill=\"{s}\">\n", .{ circle.x, circle.y, circle.radius, circle.color.named });
+        const msg = switch (circle.color) {
+            SvgColorTypeTag.named => |name| try std.fmt.bufPrint(&buffer, "\t<circle cx=\"{d}\" cy=\"{d}\" r=\"{d}\" fill=\"{s}\"/>\n", .{ circle.x, circle.y, circle.radius, name }),
+            SvgColorTypeTag.rgb => |rgb| try std.fmt.bufPrint(&buffer, "\t<circle cx=\"{d}\" cy=\"{d}\" r=\"{d}\" fill=\"rgb({d}{d}{d})\"/>\n", .{ circle.x, circle.y, circle.radius, rgb.r, rgb.g, rgb.b }),
+            SvgColorTypeTag.none => |_| {
+                unreachable;
             },
-            SvgColorTypeTag.rgb => {
-                msg = try std.fmt.bufPrint(&buffer, "<circle xmlns=\"http://www.w3.org/2000/svg\" cx=\"{d}\" cy=\"{d}\" r=\"{d}\" fill=\"rgb({d}{d}{d})\">\n", .{ circle.x, circle.y, circle.radius, circle.color.rgb.r, circle.color.rgb.g, circle.color.rgb.b });
-            },
-        }
-        if (msg) |message| {
-            try file.writeAll(message);
-        }
+        };
+        try self.writeToSvgFile(msg);
     }
 
-    pub fn closeSvgCircle(self: SvgContainer) !void {
-        const file = try std.fs.cwd().openFile(self.filename, .{ .mode = .read_write });
-        defer file.close();
-        try seekEndOfFile(file);
-        try file.writeAll("</circle>\n");
+    pub fn closeSvgFile(self: SvgContainer) !void {
+        self.file.close();
     }
 };
 
 const SvgColorTypeTag = enum {
     named,
     rgb,
+    none,
 };
 
 const RgbSvgColor = struct { r: u8, g: u8, b: u8 };
@@ -66,6 +53,7 @@ const RgbSvgColor = struct { r: u8, g: u8, b: u8 };
 const SvgColorType = union(SvgColorTypeTag) {
     named: []const u8,
     rgb: RgbSvgColor,
+    none,
 };
 
 const SvgCircle = struct {
@@ -81,7 +69,8 @@ pub fn main() !void {
     //std.debug.print("All your {s} are belong to us.\n", .{"codebase"});
     //try zig_svg_graph.bufferedPrint();
     {
-        const svg_container = SvgContainer{ .filename = "out.svg" };
+        var svg_container = try SvgContainer.open("out.svg");
+        defer svg_container.closeSvgFile() catch @panic("couldnt close svg file");
         try svg_container.genBasicSvgFileHeader();
 
         defer svg_container.addBasicSvgSuffix() catch @panic("Couldn't close svg");
@@ -91,7 +80,6 @@ pub fn main() !void {
         for (0..300) |_| {
             const my_circle = SvgCircle{ .x = rand.int(u32) % 100, .y = rand.int(u32) % 100, .radius = rand.int(u32) % 5 + 1, .color = color[rand.int(u32) % color.len] };
             try svg_container.addSvgCircle(my_circle);
-            defer svg_container.closeSvgCircle() catch @panic("Couldn't close svg circle");
         }
     }
 
