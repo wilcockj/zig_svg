@@ -14,11 +14,25 @@ const SvgContainer = struct {
     }
 
     pub fn genBasicSvgFileHeader(self: SvgContainer) !void {
-        try self.writeToSvgFile("<svg version=\"1.1\" xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 100 100\">\n");
+        try self.writeToSvgFile("<svg version=\"1.1\" xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 100 100\" preserveAspectRatio=\"true\">\n");
     }
 
     pub fn addBasicSvgSuffix(self: SvgContainer) !void {
         try self.writeToSvgFile("</svg>");
+    }
+
+    pub fn startSvgGroup(self: SvgContainer) !void {
+        try self.writeToSvgFile("<g>\n");
+    }
+
+    pub fn addSvgTitle(self: SvgContainer, title: []u8) !void {
+        var buf = [_]u8{0} ** 256;
+        const msg = try std.fmt.bufPrint(&buf, "<title>{s}</title>\n", .{title});
+        try self.writeToSvgFile(msg);
+    }
+
+    pub fn endSvgGroup(self: SvgContainer) !void {
+        try self.writeToSvgFile("</g>\n");
     }
 
     pub fn formatSvgCircle(circle: SvgCircle, buf: []u8) ![]u8 {
@@ -83,7 +97,17 @@ pub fn main() !void {
 
         for (0..300) |_| {
             const my_circle = SvgCircle{ .x = rand.int(u32) % 100, .y = rand.int(u32) % 100, .radius = rand.int(u32) % 5 + 1, .color = color[rand.int(u32) % color.len] };
+            try svg_container.startSvgGroup();
             try svg_container.addSvgCircle(my_circle);
+            var buf = [_]u8{0} ** 256;
+            switch (my_circle.color) {
+                SvgColorType.named => |name| {
+                    const msg = try std.fmt.bufPrint(&buf, ".x = {d}, .y = {d}, .r = {d}, .c={s}", .{ my_circle.x, my_circle.y, my_circle.radius, name });
+                    try svg_container.addSvgTitle(msg);
+                },
+                else => {},
+            }
+            try svg_container.endSvgGroup();
         }
     }
 
@@ -106,15 +130,4 @@ test "svg circle rgb color test" {
     const msg = try SvgContainer.formatSvgCircle(my_circle, &buf);
 
     try std.testing.expectEqualStrings("<circle cx=\"100\" cy=\"100\" r=\"100\" fill=\"rgb(100,50,50)\"/>\n", msg);
-}
-
-test "fuzz example" {
-    const Context = struct {
-        fn testOne(context: @This(), input: []const u8) anyerror!void {
-            _ = context;
-            // Try passing `--fuzz` to `zig build test` and see if it manages to fail this test case!
-            try std.testing.expect(!std.mem.eql(u8, "canyoufindme", input));
-        }
-    };
-    try std.testing.fuzz(Context{}, Context.testOne, .{});
 }
