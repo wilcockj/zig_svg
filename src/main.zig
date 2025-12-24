@@ -2,11 +2,9 @@ const std = @import("std");
 const zig_svg_graph = @import("zig_svg_graph");
 
 const SvgContainer = struct {
-    filename: []const u8,
     file: std.fs.File,
     pub fn open(filename: []const u8) !SvgContainer {
         return .{
-            .filename = filename,
             .file = try std.fs.cwd().createFile(filename, .{ .read = true }),
         };
     }
@@ -23,18 +21,24 @@ const SvgContainer = struct {
         try self.writeToSvgFile("</svg>");
     }
 
-    pub fn addSvgCircle(self: SvgContainer, circle: SvgCircle) !void {
-        var buffer: [1024]u8 = undefined; // Buffer must be large enough
-
+    pub fn formatSvgCircle(circle: SvgCircle, buf: []u8) ![]u8 {
         // Formats into the stack-allocated buffer
         const msg = switch (circle.color) {
-            SvgColorTypeTag.named => |name| try std.fmt.bufPrint(&buffer, "\t<circle cx=\"{d}\" cy=\"{d}\" r=\"{d}\" fill=\"{s}\"/>\n", .{ circle.x, circle.y, circle.radius, name }),
-            SvgColorTypeTag.rgb => |rgb| try std.fmt.bufPrint(&buffer, "\t<circle cx=\"{d}\" cy=\"{d}\" r=\"{d}\" fill=\"rgb({d}{d}{d})\"/>\n", .{ circle.x, circle.y, circle.radius, rgb.r, rgb.g, rgb.b }),
+            SvgColorTypeTag.named => |name| try std.fmt.bufPrint(buf, "<circle cx=\"{d}\" cy=\"{d}\" r=\"{d}\" fill=\"{s}\"/>\n", .{ circle.x, circle.y, circle.radius, name }),
+            SvgColorTypeTag.rgb => |rgb| try std.fmt.bufPrint(buf, "<circle cx=\"{d}\" cy=\"{d}\" r=\"{d}\" fill=\"rgb({d},{d},{d})\"/>\n", .{ circle.x, circle.y, circle.radius, rgb.r, rgb.g, rgb.b }),
             SvgColorTypeTag.none => |_| {
                 unreachable;
             },
         };
-        try self.writeToSvgFile(msg);
+        return msg;
+    }
+
+    pub fn addSvgCircle(self: SvgContainer, circle: SvgCircle) !void {
+        var buffer = [_]u8{0} ** 256; // Buffer must be large enough
+
+        // Formats into the stack-allocated buffer
+        const written = try formatSvgCircle(circle, &buffer);
+        try self.writeToSvgFile(written);
     }
 
     pub fn closeSvgFile(self: SvgContainer) !void {
@@ -86,12 +90,22 @@ pub fn main() !void {
     // simple svg generation
 }
 
-test "simple test" {
-    const gpa = std.testing.allocator;
-    var list: std.ArrayList(i32) = .empty;
-    defer list.deinit(gpa); // Try commenting this out and see if zig detects the memory leak!
-    try list.append(gpa, 42);
-    try std.testing.expectEqual(@as(i32, 42), list.pop());
+test "svg circle named color test" {
+    const color = SvgColorType{ .named = "mediumorchid" };
+    const my_circle = SvgCircle{ .x = 100, .y = 100, .radius = 100, .color = color };
+    var buf = [_]u8{0} ** 256;
+    const msg = try SvgContainer.formatSvgCircle(my_circle, &buf);
+
+    try std.testing.expectEqualStrings("<circle cx=\"100\" cy=\"100\" r=\"100\" fill=\"mediumorchid\"/>\n", msg);
+}
+
+test "svg circle rgb color test" {
+    const color = SvgColorType{ .rgb = RgbSvgColor{ .r = 100, .g = 50, .b = 50 } };
+    const my_circle = SvgCircle{ .x = 100, .y = 100, .radius = 100, .color = color };
+    var buf = [_]u8{0} ** 256;
+    const msg = try SvgContainer.formatSvgCircle(my_circle, &buf);
+
+    try std.testing.expectEqualStrings("<circle cx=\"100\" cy=\"100\" r=\"100\" fill=\"rgb(100,50,50)\"/>\n", msg);
 }
 
 test "fuzz example" {
