@@ -86,9 +86,10 @@ pub fn main() !void {
 
         defer svg_container.addBasicSvgSuffix() catch @panic("Couldn't close svg");
 
-        const color = SvgColorType{ .named = "mediumorchid" };
+        const color = [_]SvgColorType{ SvgColorType{ .named = "mediumorchid" }, SvgColorType{ .named = "midnightblue" }, SvgColorType{ .named = "navajowhite" } };
+
         for (0..300) |_| {
-            const my_circle = SvgCircle{ .x = rand.int(u32) % 100, .y = rand.int(u32) % 100, .radius = rand.int(u32) % 5 + 1, .color = color };
+            const my_circle = SvgCircle{ .x = rand.int(u32) % 100, .y = rand.int(u32) % 100, .radius = rand.int(u32) % 5 + 1, .color = color[rand.int(u32) % color.len] };
             try svg_container.addSvgCircle(my_circle);
             defer svg_container.closeSvgCircle() catch @panic("Couldn't close svg circle");
         }
