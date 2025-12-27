@@ -35,7 +35,6 @@ pub fn getRandomNamedSvgColor() SvgColorType {
 
 const SvgContainer = struct {
     writer: *std.Io.Writer,
-    var svg_writer_buf = [_]u8{0} ** 256;
 
     pub fn open(writer: *std.Io.Writer) !SvgContainer {
         var new_container = SvgContainer{ .writer = writer };
@@ -60,6 +59,7 @@ const SvgContainer = struct {
     }
 
     pub fn addSvgTitle(self: SvgContainer, title: []u8) !void {
+        var svg_writer_buf = [_]u8{0} ** 256;
         const msg = try std.fmt.bufPrint(&svg_writer_buf, "<title>{s}</title>\n", .{title});
         try self.writeToSvgFile(msg);
     }
@@ -68,20 +68,103 @@ const SvgContainer = struct {
         try self.writeToSvgFile("</g>\n");
     }
 
+    pub fn appendFillColor(color: SvgColorType, buf: []u8) ![]u8 {
+        const written = switch (color) {
+            .named => |name| try std.fmt.bufPrint(
+                buf,
+                " fill=\"{s}\"",
+                .{name},
+            ),
+            .rgb => |rgb| try std.fmt.bufPrint(
+                buf,
+                " fill=\"rgb({d},{d},{d})\"",
+                .{ rgb.r, rgb.g, rgb.b },
+            ),
+            .none => try std.fmt.bufPrint(
+                buf,
+                " />\n",
+                .{},
+            ),
+        };
+        return written;
+    }
+
+    pub fn appendStrokeColor(color: SvgColorType, buf: []u8) ![]u8 {
+        const written = switch (color) {
+            .named => |name| try std.fmt.bufPrint(
+                buf,
+                " stroke=\"{s}\"",
+                .{name},
+            ),
+            .rgb => |rgb| try std.fmt.bufPrint(
+                buf,
+                " stroke=\"rgb({d},{d},{d})\"",
+                .{ rgb.r, rgb.g, rgb.b },
+            ),
+            .none => try std.fmt.bufPrint(
+                buf,
+                " />\n",
+                .{},
+            ),
+        };
+        return written;
+    }
+
+    pub fn appendTagClose(buf: []u8) ![]u8 {
+        const written = try std.fmt.bufPrint(
+            buf,
+            "/>\n",
+            .{},
+        );
+        return written;
+    }
+
+    pub fn appendRectCornerRadius(rx: f32, ry: f32, buf: []u8) ![]u8 {
+        const written = try std.fmt.bufPrint(
+            buf,
+            " rx=\"{d}\" ry=\"{d}\"",
+            .{ rx, ry },
+        );
+        return written;
+    }
+
+    pub fn appendStroke(stroke_config: SvgStrokeConfig, buf: []u8) !usize {
+        var written_len: usize = 0;
+        const written = try appendStrokeColor(stroke_config.stroke_color, buf);
+        written_len += written.len;
+        const stroke_width_written = try std.fmt.bufPrint(
+            buf[written_len..],
+            " stroke-width=\"{d}\"",
+            .{stroke_config.stroke_width},
+        );
+        return written_len + stroke_width_written.len;
+    }
+
     pub fn formatSvgCircle(circle: SvgCircle, buf: []u8) ![]u8 {
         // Formats into the stack-allocated buffer
-        const msg = switch (circle.color) {
-            .named => |name| try std.fmt.bufPrint(buf, "<circle cx=\"{d}\" cy=\"{d}\" r=\"{d}\" fill=\"{s}\"/>\n", .{ circle.x, circle.y, circle.radius, name }),
-            .rgb => |rgb| try std.fmt.bufPrint(buf, "<circle cx=\"{d}\" cy=\"{d}\" r=\"{d}\" fill=\"rgb({d},{d},{d})\"/>\n", .{ circle.x, circle.y, circle.radius, rgb.r, rgb.g, rgb.b }),
-            .none => |_| {
-                unreachable;
-            },
-        };
-        return msg;
+        var idx: usize = 0;
+        const msg = try std.fmt.bufPrint(buf, "<circle cx=\"{d}\" cy=\"{d}\" r=\"{d}\"", .{ circle.x, circle.y, circle.radius });
+        idx += msg.len;
+
+        {
+            const written = try appendFillColor(circle.color, buf[idx..]);
+            idx += written.len;
+        }
+
+        if (circle.stroke_config.stroke_enabled) {
+            idx += try appendStroke(circle.stroke_config, buf[idx..]);
+        }
+
+        {
+            const written = try appendTagClose(buf[idx..]);
+            idx += written.len;
+        }
+        return buf[0..idx];
     }
 
     pub fn addSvgCircle(self: SvgContainer, circle: SvgCircle) !void {
         // Formats into the stack-allocated buffer
+        var svg_writer_buf = [_]u8{0} ** 256;
         const written = try formatSvgCircle(circle, &svg_writer_buf);
         try self.writeToSvgFile(written);
     }
@@ -89,37 +172,35 @@ const SvgContainer = struct {
     pub fn formatSvgRectangle(rect: SvgRect, buf: []u8) ![]u8 {
         // not implemented
         var idx: usize = 0;
-        if (rect.round_rect) {
-            const written = try std.fmt.bufPrint(buf, "<rect x=\"{d}\" y=\"{d}\" rx=\"{d}\" ry=\"{d}\" width=\"{d}\" height=\"{d}\"", .{ rect.x, rect.y, rect.rx, rect.ry, rect.width, rect.height });
-            idx += written.len;
-        } else {
+        {
             const written = try std.fmt.bufPrint(buf, "<rect x=\"{d}\" y=\"{d}\" width=\"{d}\" height=\"{d}\"", .{ rect.x, rect.y, rect.width, rect.height });
             idx += written.len;
         }
-        const written = switch (rect.color) {
-            .named => |name| try std.fmt.bufPrint(
-                buf[idx..],
-                " fill=\"{s}\" />\n",
-                .{name},
-            ),
-            .rgb => |rgb| try std.fmt.bufPrint(
-                buf[idx..],
-                " fill=\"rgb({d},{d},{d})\" />\n",
-                .{ rgb.r, rgb.g, rgb.b },
-            ),
-            .none => try std.fmt.bufPrint(
-                buf[idx..],
-                " />\n",
-                .{},
-            ),
-        };
 
-        idx += written.len;
+        if (rect.round_rect) {
+            const written = try appendRectCornerRadius(rect.rx, rect.ry, buf[idx..]);
+            idx += written.len;
+        }
+
+        {
+            const written = try appendFillColor(rect.color, buf[idx..]);
+            idx += written.len;
+        }
+
+        if (rect.stroke_config.stroke_enabled) {
+            idx += try appendStroke(rect.stroke_config, buf[idx..]);
+        }
+
+        {
+            const written = try appendTagClose(buf[idx..]);
+            idx += written.len;
+        }
         return buf[0..idx];
     }
 
     pub fn addSvgRect(self: SvgContainer, rect: SvgRect) !void {
         // Formats into the stack-allocated buffer
+        var svg_writer_buf = [_]u8{0} ** 256;
         const written = try formatSvgRectangle(rect, &svg_writer_buf);
         try self.writeToSvgFile(written);
     }
@@ -147,7 +228,16 @@ const SvgCircle = struct {
     x: f32,
     y: f32,
     radius: f32,
+    stroke_config: SvgStrokeConfig = SvgStrokeConfig{},
     color: SvgColorType,
+};
+
+const SvgStrokeConfig = struct {
+    stroke_enabled: bool = false,
+    stroke_color: SvgColorType = SvgColorType{ .none = {} },
+    stroke_width: f32 = 0.0,
+    stroke_opacity: f32 = 1.0,
+    stroke_dasharray: bool = false,
 };
 
 const SvgRect = struct {
@@ -158,6 +248,7 @@ const SvgRect = struct {
     width: f32,
     height: f32,
     color: SvgColorType,
+    stroke_config: SvgStrokeConfig = SvgStrokeConfig{},
     round_rect: bool = false,
 
     pub fn buildSvgRect(x: f32, y: f32, width: f32, height: f32, color: SvgColorType) SvgRect {
@@ -206,12 +297,11 @@ pub fn main() !void {
             const circle_size = 0.5;
             const my_y = std.math.sin(@as(f32, @floatFromInt(i)) / (2 * std.math.pi)) * 25 + 50;
 
-            const stroke = 0.1;
+            const stroke_width = 0.1;
             const stroke_color = SvgColorType{ .named = "black" };
 
-            const my_stroke_circle = SvgCircle{ .x = @floatFromInt(i), .y = my_y, .radius = circle_size + stroke, .color = stroke_color };
-            try svg_container.addSvgCircle(my_stroke_circle);
-            const my_circle = SvgCircle{ .x = @floatFromInt(i), .y = my_y, .radius = circle_size, .color = rand_color };
+            const stroke_config = SvgStrokeConfig{ .stroke_enabled = true, .stroke_color = stroke_color, .stroke_dasharray = false, .stroke_width = stroke_width };
+            const my_circle = SvgCircle{ .x = @floatFromInt(i), .y = my_y, .radius = circle_size, .color = rand_color, .stroke_config = stroke_config };
 
             try svg_container.addSvgCircle(my_circle);
         }
