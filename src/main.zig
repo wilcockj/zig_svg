@@ -29,6 +29,10 @@ pub fn pickRandomNamedColor() []const u8 {
     return cssColorKeywords[std.crypto.random.int(u32) % cssColorKeywords.len];
 }
 
+pub fn getRandomNamedSvgColor() SvgColorType {
+    return SvgColorType{ .named = cssColorKeywords[std.crypto.random.int(u32) % cssColorKeywords.len] };
+}
+
 const SvgContainer = struct {
     writer: *std.Io.Writer,
     var svg_writer_buf = [_]u8{0} ** 256;
@@ -44,7 +48,7 @@ const SvgContainer = struct {
     }
 
     fn genBasicSvgFileHeader(self: SvgContainer) !void {
-        try self.writeToSvgFile("<svg version=\"1.1\" xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 100 100\" preserveAspectRatio=\"true\">\n");
+        try self.writeToSvgFile("<svg version=\"1.1\" xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 100 100\" preserveAspectRatio=\"xMinYMin\">\n");
     }
 
     pub fn addBasicSvgSuffix(self: SvgContainer) !void {
@@ -67,9 +71,9 @@ const SvgContainer = struct {
     pub fn formatSvgCircle(circle: SvgCircle, buf: []u8) ![]u8 {
         // Formats into the stack-allocated buffer
         const msg = switch (circle.color) {
-            SvgColorTypeTag.named => |name| try std.fmt.bufPrint(buf, "<circle cx=\"{d}\" cy=\"{d}\" r=\"{d}\" fill=\"{s}\"/>\n", .{ circle.x, circle.y, circle.radius, name }),
-            SvgColorTypeTag.rgb => |rgb| try std.fmt.bufPrint(buf, "<circle cx=\"{d}\" cy=\"{d}\" r=\"{d}\" fill=\"rgb({d},{d},{d})\"/>\n", .{ circle.x, circle.y, circle.radius, rgb.r, rgb.g, rgb.b }),
-            SvgColorTypeTag.none => |_| {
+            .named => |name| try std.fmt.bufPrint(buf, "<circle cx=\"{d}\" cy=\"{d}\" r=\"{d}\" fill=\"{s}\"/>\n", .{ circle.x, circle.y, circle.radius, name }),
+            .rgb => |rgb| try std.fmt.bufPrint(buf, "<circle cx=\"{d}\" cy=\"{d}\" r=\"{d}\" fill=\"rgb({d},{d},{d})\"/>\n", .{ circle.x, circle.y, circle.radius, rgb.r, rgb.g, rgb.b }),
+            .none => |_| {
                 unreachable;
             },
         };
@@ -84,16 +88,40 @@ const SvgContainer = struct {
 
     pub fn formatSvgRectangle(rect: SvgRect, buf: []u8) ![]u8 {
         // not implemented
-        _ = rect;
-        _ = buf;
-        //const msg = switch (rect.color) {
-        //    SvgColorTypeTag.named => |name| unreachable,
-        //    SvgColorTypeTag.rgb => |rgb| unreachable,
-        //    SvgColorTypeTag.none => |_| {
-        //        unreachable;
-        //    },
-        //};
-        //return msg;
+        var idx: usize = 0;
+        if (rect.round_rect) {
+            const written = try std.fmt.bufPrint(buf, "<rect x=\"{d}\" y=\"{d}\" rx=\"{d}\" ry=\"{d}\" width=\"{d}\" height=\"{d}\"", .{ rect.x, rect.y, rect.rx, rect.ry, rect.width, rect.height });
+            idx += written.len;
+        } else {
+            const written = try std.fmt.bufPrint(buf, "<rect x=\"{d}\" y=\"{d}\" width=\"{d}\" height=\"{d}\"", .{ rect.x, rect.y, rect.width, rect.height });
+            idx += written.len;
+        }
+        const written = switch (rect.color) {
+            .named => |name| try std.fmt.bufPrint(
+                buf[idx..],
+                " fill=\"{s}\" />\n",
+                .{name},
+            ),
+            .rgb => |rgb| try std.fmt.bufPrint(
+                buf[idx..],
+                " fill=\"rgb({d},{d},{d})\" />\n",
+                .{ rgb.r, rgb.g, rgb.b },
+            ),
+            .none => try std.fmt.bufPrint(
+                buf[idx..],
+                " />\n",
+                .{},
+            ),
+        };
+
+        idx += written.len;
+        return buf[0..idx];
+    }
+
+    pub fn addSvgRect(self: SvgContainer, rect: SvgRect) !void {
+        // Formats into the stack-allocated buffer
+        const written = try formatSvgRectangle(rect, &svg_writer_buf);
+        try self.writeToSvgFile(written);
     }
 
     pub fn closeSvgFile(self: SvgContainer) !void {
@@ -116,25 +144,35 @@ const SvgColorType = union(SvgColorTypeTag) {
 };
 
 const SvgCircle = struct {
-    x: u32,
-    y: u32,
-    radius: u32,
+    x: f32,
+    y: f32,
+    radius: f32,
     color: SvgColorType,
 };
 
 const SvgRect = struct {
-    x: u32,
-    y: u32,
-    width: u32,
-    height: u32,
+    x: f32,
+    y: f32,
+    rx: f32,
+    ry: f32,
+    width: f32,
+    height: f32,
     color: SvgColorType,
+    round_rect: bool = false,
+
+    pub fn buildSvgRect(x: f32, y: f32, width: f32, height: f32, color: SvgColorType) SvgRect {
+        const my_rect = SvgRect{ .x = x, .y = y, .rx = 0, .ry = 0, .width = width, .height = height, .color = color };
+        return my_rect;
+    }
+
+    pub fn buildSvgRoundRect(x: f32, y: f32, rx: f32, ry: f32, width: f32, height: f32, color: SvgColorType) SvgRect {
+        const my_rect = SvgRect{ .x = x, .y = y, .rx = rx, .ry = ry, .width = width, .height = height, .color = color, .round_rect = true };
+        return my_rect;
+    }
 };
 
 pub fn main() !void {
-    // Prints to stderr, ignoring potential errors.
     const rand = std.crypto.random;
-    //std.debug.print("All your {s} are belong to us.\n", .{"codebase"});
-    //try zig_svg_graph.bufferedPrint();
     {
         var stdout_buffer: [5096]u8 = undefined;
         var stdout_writer = std.fs.File.stdout().writer(&stdout_buffer);
@@ -144,9 +182,8 @@ pub fn main() !void {
 
         defer svg_container.addBasicSvgSuffix() catch @panic("Couldn't close svg");
 
-        for (0..3000) |_| {
-            const rand_color = pickRandomNamedColor();
-            const my_color = SvgColorType{ .named = rand_color };
+        for (0..0) |_| {
+            const my_color = getRandomNamedSvgColor();
 
             const my_circle = SvgCircle{ .x = rand.int(u32) % 100, .y = rand.int(u32) % 100, .radius = rand.int(u32) % 5 + 1, .color = my_color };
             try svg_container.startSvgGroup();
@@ -160,6 +197,23 @@ pub fn main() !void {
                 else => {},
             }
             try svg_container.endSvgGroup();
+        }
+
+        const square = SvgRect.buildSvgRect(0, 0, 100, 100, SvgColorType{ .named = "azure" });
+        try svg_container.addSvgRect(square);
+        for (0..100) |i| {
+            const rand_color = getRandomNamedSvgColor();
+            const circle_size = 0.5;
+            const my_y = std.math.sin(@as(f32, @floatFromInt(i)) / (2 * std.math.pi)) * 25 + 50;
+
+            const stroke = 0.1;
+            const stroke_color = SvgColorType{ .named = "black" };
+
+            const my_stroke_circle = SvgCircle{ .x = @floatFromInt(i), .y = my_y, .radius = circle_size + stroke, .color = stroke_color };
+            try svg_container.addSvgCircle(my_stroke_circle);
+            const my_circle = SvgCircle{ .x = @floatFromInt(i), .y = my_y, .radius = circle_size, .color = rand_color };
+
+            try svg_container.addSvgCircle(my_circle);
         }
     }
 
