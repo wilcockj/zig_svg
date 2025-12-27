@@ -234,7 +234,7 @@ const SvgCircle = struct {
 
 const SvgStrokeConfig = struct {
     stroke_enabled: bool = false,
-    stroke_color: SvgColorType = SvgColorType{ .none = {} },
+    stroke_color: SvgColorType = SvgColorType{ .named = "black" },
     stroke_width: f32 = 0.0,
     stroke_opacity: f32 = 1.0,
     stroke_dasharray: bool = false,
@@ -268,6 +268,7 @@ pub fn main() !void {
         var stdout_buffer: [5096]u8 = undefined;
         var stdout_writer = std.fs.File.stdout().writer(&stdout_buffer);
         const stdout = &stdout_writer.interface;
+
         var svg_container = try SvgContainer.open(stdout);
         defer svg_container.closeSvgFile() catch @panic("couldnt close svg file");
 
@@ -290,6 +291,7 @@ pub fn main() !void {
             try svg_container.endSvgGroup();
         }
 
+        // try graphing
         const square = SvgRect.buildSvgRect(0, 0, 100, 100, SvgColorType{ .named = "azure" });
         try svg_container.addSvgRect(square);
         for (0..100) |i| {
