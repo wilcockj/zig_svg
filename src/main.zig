@@ -294,16 +294,16 @@ pub fn main() !void {
         // try graphing
         const square = SvgRect.buildSvgRect(0, 0, 100, 100, SvgColorType{ .named = "azure" });
         try svg_container.addSvgRect(square);
-        for (0..100) |i| {
+        const num_points = 200;
+        for (0..num_points) |i| {
             const rand_color = getRandomNamedSvgColor();
-            const circle_size = 0.5;
-            const my_y = std.math.sin(@as(f32, @floatFromInt(i)) / (2 * std.math.pi)) * 25 + 50;
+            const circle_size = 0.6;
+            const my_y = std.math.sin(@as(f32, @floatFromInt(i)) / (4 * std.math.pi)) * 25 + 50;
 
             const stroke_width = 0.1;
-            const stroke_color = SvgColorType{ .named = "black" };
 
-            const stroke_config = SvgStrokeConfig{ .stroke_enabled = true, .stroke_color = stroke_color, .stroke_dasharray = false, .stroke_width = stroke_width };
-            const my_circle = SvgCircle{ .x = @floatFromInt(i), .y = my_y, .radius = circle_size, .color = rand_color, .stroke_config = stroke_config };
+            const stroke_config = SvgStrokeConfig{ .stroke_enabled = true, .stroke_dasharray = false, .stroke_width = stroke_width };
+            const my_circle = SvgCircle{ .x = @as(f32, @floatFromInt(i)) / num_points * 100, .y = my_y, .radius = circle_size, .color = rand_color, .stroke_config = stroke_config };
 
             try svg_container.addSvgCircle(my_circle);
         }
