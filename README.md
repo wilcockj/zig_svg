@@ -10,4 +10,5 @@
 - function to format svg line and function to append it
 - way to add stroke
 - way to change viewbox
+- add rectangle
 

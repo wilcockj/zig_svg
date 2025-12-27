@@ -1,19 +1,49 @@
 const std = @import("std");
 const zig_svg_graph = @import("zig_svg_graph");
 
+const cssColorKeywords = [_][]const u8{
+    "aliceblue",            "antiquewhite",    "aqua",              "aquamarine",       "azure",           "beige",         "bisque",
+    "black",                "blanchedalmond",  "blue",              "blueviolet",       "brown",           "burlywood",     "cadetblue",
+    "chartreuse",           "chocolate",       "coral",             "cornflowerblue",   "cornsilk",        "crimson",       "cyan",
+    "darkblue",             "darkcyan",        "darkgoldenrod",     "darkgray",         "darkgreen",       "darkgrey",      "darkkhaki",
+    "darkmagenta",          "darkolivegreen",  "darkorange",        "darkorchid",       "darkred",         "darksalmon",    "darkseagreen",
+    "darkslateblue",        "darkslategray",   "darkslategrey",     "darkturquoise",    "darkviolet",      "deeppink",      "deepskyblue",
+    "dimgray",              "dimgrey",         "dodgerblue",        "firebrick",        "floralwhite",     "forestgreen",   "fuchsia",
+    "gainsboro",            "ghostwhite",      "gold",              "goldenrod",        "gray",            "green",         "greenyellow",
+    "grey",                 "honeydew",        "hotpink",           "indianred",        "indigo",          "ivory",         "khaki",
+    "lavender",             "lavenderblush",   "lawngreen",         "lemonchiffon",     "lightblue",       "lightcoral",    "lightcyan",
+    "lightgoldenrodyellow", "lightgray",       "lightgreen",        "lightgrey",        "lightpink",       "lightsalmon",   "lightseagreen",
+    "lightskyblue",         "lightslategray",  "lightslategrey",    "lightsteelblue",   "lightyellow",     "lime",          "limegreen",
+    "linen",                "magenta",         "maroon",            "mediumaquamarine", "mediumblue",      "mediumorchid",  "mediumpurple",
+    "mediumseagreen",       "mediumslateblue", "mediumspringgreen", "mediumturquoise",  "mediumvioletred", "midnightblue",  "mintcream",
+    "mistyrose",            "moccasin",        "navajowhite",       "navy",             "oldlace",         "olive",         "olivedrab",
+    "orange",               "orangered",       "orchid",            "palegoldenrod",    "palegreen",       "paleturquoise", "palevioletred",
+    "papayawhip",           "peachpuff",       "peru",              "pink",             "plum",            "powderblue",    "purple",
+    "red",                  "rosybrown",       "royalblue",         "saddlebrown",      "salmon",          "sandybrown",    "seagreen",
+    "seashell",             "sienna",          "silver",            "skyblue",          "slateblue",       "slategray",     "slategrey",
+    "snow",                 "springgreen",     "steelblue",         "tan",              "teal",            "thistle",       "tomato",
+    "turquoise",            "violet",          "wheat",             "white",            "whitesmoke",      "yellow",        "yellowgreen",
+};
+
+pub fn pickRandomNamedColor() []const u8 {
+    return cssColorKeywords[std.crypto.random.int(u32) % cssColorKeywords.len];
+}
+
 const SvgContainer = struct {
-    file: std.fs.File,
-    pub fn open(filename: []const u8) !SvgContainer {
-        return .{
-            .file = try std.fs.cwd().createFile(filename, .{ .read = true }),
-        };
+    writer: *std.Io.Writer,
+    var svg_writer_buf = [_]u8{0} ** 256;
+
+    pub fn open(writer: *std.Io.Writer) !SvgContainer {
+        var new_container = SvgContainer{ .writer = writer };
+        try new_container.genBasicSvgFileHeader();
+        return new_container;
     }
 
     pub fn writeToSvgFile(self: SvgContainer, msg: []const u8) !void {
-        try self.file.writeAll(msg);
+        try self.writer.writeAll(msg);
     }
 
-    pub fn genBasicSvgFileHeader(self: SvgContainer) !void {
+    fn genBasicSvgFileHeader(self: SvgContainer) !void {
         try self.writeToSvgFile("<svg version=\"1.1\" xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 100 100\" preserveAspectRatio=\"true\">\n");
     }
 
@@ -26,8 +56,7 @@ const SvgContainer = struct {
     }
 
     pub fn addSvgTitle(self: SvgContainer, title: []u8) !void {
-        var buf = [_]u8{0} ** 256;
-        const msg = try std.fmt.bufPrint(&buf, "<title>{s}</title>\n", .{title});
+        const msg = try std.fmt.bufPrint(&svg_writer_buf, "<title>{s}</title>\n", .{title});
         try self.writeToSvgFile(msg);
     }
 
@@ -48,15 +77,27 @@ const SvgContainer = struct {
     }
 
     pub fn addSvgCircle(self: SvgContainer, circle: SvgCircle) !void {
-        var buffer = [_]u8{0} ** 256; // Buffer must be large enough
-
         // Formats into the stack-allocated buffer
-        const written = try formatSvgCircle(circle, &buffer);
+        const written = try formatSvgCircle(circle, &svg_writer_buf);
         try self.writeToSvgFile(written);
     }
 
+    pub fn formatSvgRectangle(rect: SvgRect, buf: []u8) ![]u8 {
+        // not implemented
+        _ = rect;
+        _ = buf;
+        //const msg = switch (rect.color) {
+        //    SvgColorTypeTag.named => |name| unreachable,
+        //    SvgColorTypeTag.rgb => |rgb| unreachable,
+        //    SvgColorTypeTag.none => |_| {
+        //        unreachable;
+        //    },
+        //};
+        //return msg;
+    }
+
     pub fn closeSvgFile(self: SvgContainer) !void {
-        self.file.close();
+        try self.writer.flush();
     }
 };
 
@@ -81,22 +122,33 @@ const SvgCircle = struct {
     color: SvgColorType,
 };
 
+const SvgRect = struct {
+    x: u32,
+    y: u32,
+    width: u32,
+    height: u32,
+    color: SvgColorType,
+};
+
 pub fn main() !void {
     // Prints to stderr, ignoring potential errors.
     const rand = std.crypto.random;
     //std.debug.print("All your {s} are belong to us.\n", .{"codebase"});
     //try zig_svg_graph.bufferedPrint();
     {
-        var svg_container = try SvgContainer.open("out.svg");
+        var stdout_buffer: [5096]u8 = undefined;
+        var stdout_writer = std.fs.File.stdout().writer(&stdout_buffer);
+        const stdout = &stdout_writer.interface;
+        var svg_container = try SvgContainer.open(stdout);
         defer svg_container.closeSvgFile() catch @panic("couldnt close svg file");
-        try svg_container.genBasicSvgFileHeader();
 
         defer svg_container.addBasicSvgSuffix() catch @panic("Couldn't close svg");
 
-        const color = [_]SvgColorType{ SvgColorType{ .named = "mediumorchid" }, SvgColorType{ .named = "midnightblue" }, SvgColorType{ .named = "navajowhite" } };
+        for (0..3000) |_| {
+            const rand_color = pickRandomNamedColor();
+            const my_color = SvgColorType{ .named = rand_color };
 
-        for (0..300) |_| {
-            const my_circle = SvgCircle{ .x = rand.int(u32) % 100, .y = rand.int(u32) % 100, .radius = rand.int(u32) % 5 + 1, .color = color[rand.int(u32) % color.len] };
+            const my_circle = SvgCircle{ .x = rand.int(u32) % 100, .y = rand.int(u32) % 100, .radius = rand.int(u32) % 5 + 1, .color = my_color };
             try svg_container.startSvgGroup();
             try svg_container.addSvgCircle(my_circle);
             var buf = [_]u8{0} ** 256;
