@@ -140,6 +140,11 @@ const SvgContainer = struct {
         return written_len + stroke_width_written.len;
     }
 
+    pub fn formatSvgAnimate(animate: SvgAnimateConfig, buf: []u8) ![]u8 {
+        const written = try std.fmt.bufPrint(buf, "<animate attributeName=\"{s}\" values=\"{s}\" dur=\"{d}s\" repeatCount=\"{s}\"/>", .{ animate.attribute_name, animate.values, animate.duration, animate.repeat_count });
+        return written;
+    }
+
     pub fn formatSvgCircle(circle: SvgCircle, buf: []u8) ![]u8 {
         // Formats into the stack-allocated buffer
         var idx: usize = 0;
@@ -155,9 +160,19 @@ const SvgContainer = struct {
             idx += try appendStroke(circle.stroke_config, buf[idx..]);
         }
 
-        {
+        if (!circle.animate_config.enabled) {
             const written = try appendTagClose(buf[idx..]);
             idx += written.len;
+        } else {
+            // Close the opening tag and add animation element
+            const close_tag = try std.fmt.bufPrint(buf[idx..], ">\n", .{});
+            idx += close_tag.len;
+
+            const animate = try formatSvgAnimate(circle.animate_config, buf[idx..]);
+            idx += animate.len;
+
+            const end_circle = try std.fmt.bufPrint(buf[idx..], "</circle>\n", .{});
+            idx += end_circle.len;
         }
         return buf[0..idx];
     }
@@ -224,12 +239,21 @@ const SvgColorType = union(SvgColorTypeTag) {
     none,
 };
 
+const SvgAnimateConfig = struct {
+    enabled: bool = false,
+    attribute_name: []const u8 = "cy",
+    values: []const u8 = "", // Semicolon-separated values
+    duration: f32 = 2.0,
+    repeat_count: []const u8 = "indefinite",
+};
+
 const SvgCircle = struct {
     x: f32,
     y: f32,
     radius: f32,
     stroke_config: SvgStrokeConfig = SvgStrokeConfig{},
     color: SvgColorType,
+    animate_config: SvgAnimateConfig = SvgAnimateConfig{},
 };
 
 const SvgStrokeConfig = struct {
@@ -298,12 +322,44 @@ pub fn main() !void {
         for (0..num_points) |i| {
             const rand_color = getRandomNamedSvgColor();
             const circle_size = 0.6;
-            const my_y = std.math.sin(@as(f32, @floatFromInt(i)) / (4 * std.math.pi)) * 25 + 50;
+            const x_pos = @as(f32, @floatFromInt(i)) / num_points * 100;
+
+            const phase = @as(f32, @floatFromInt(i)) / (4 * std.math.pi);
+            const amplitude = 25.0;
+            const center_y = 50.0;
+
+            // For a traveling wave, advance the phase by a small amount (one wavelength shift)
+            // This makes the wave pattern appear to move
+            const phase_shift = 2.0 * std.math.pi; // One complete wavelength travels past
+
+            var values_buf = [_]u8{0} ** 128;
+            const values = try std.fmt.bufPrint(&values_buf, "{d:.2};{d:.2};{d:.2};{d:.2};{d:.2}", .{
+                std.math.sin(phase) * amplitude + center_y,
+                std.math.sin(phase + phase_shift * 0.25) * amplitude + center_y,
+                std.math.sin(phase + phase_shift * 0.5) * amplitude + center_y,
+                std.math.sin(phase + phase_shift * 0.75) * amplitude + center_y,
+                std.math.sin(phase + phase_shift) * amplitude + center_y,
+            });
 
             const stroke_width = 0.1;
-
             const stroke_config = SvgStrokeConfig{ .stroke_enabled = true, .stroke_dasharray = false, .stroke_width = stroke_width };
-            const my_circle = SvgCircle{ .x = @as(f32, @floatFromInt(i)) / num_points * 100, .y = my_y, .radius = circle_size, .color = rand_color, .stroke_config = stroke_config };
+
+            const animate_config = SvgAnimateConfig{
+                .enabled = true,
+                .attribute_name = "cy",
+                .values = values,
+                .duration = 6.0,
+                .repeat_count = "indefinite",
+            };
+
+            const my_circle = SvgCircle{
+                .x = x_pos,
+                .y = std.math.sin(phase) * amplitude + center_y,
+                .radius = circle_size,
+                .color = rand_color,
+                .stroke_config = stroke_config,
+                .animate_config = animate_config,
+            };
 
             try svg_container.addSvgCircle(my_circle);
         }
