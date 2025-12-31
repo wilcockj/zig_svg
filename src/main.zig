@@ -51,7 +51,7 @@ const SvgContainer = struct {
     }
 
     pub fn addBasicSvgSuffix(self: SvgContainer) !void {
-        try self.writeToSvgFile("</svg>");
+        try self.writeToSvgFile("</svg>\n");
     }
 
     pub fn startSvgGroup(self: SvgContainer) !void {
@@ -59,37 +59,23 @@ const SvgContainer = struct {
     }
 
     pub fn addSvgTitle(self: SvgContainer, title: []u8) !void {
-        var svg_writer_buf = [_]u8{0} ** 256;
-        const msg = try std.fmt.bufPrint(&svg_writer_buf, "<title>{s}</title>\n", .{title});
-        try self.writeToSvgFile(msg);
+        var buffer: [1024]u8 = undefined;
+        var fba = std.heap.FixedBufferAllocator.init(buffer[0..]);
+        const allocator = fba.allocator();
+
+        var list: std.ArrayList(u8) = .empty;
+        list.ensureTotalCapacity(allocator, buffer.size / 2);
+        defer list.deinit(allocator);
+        var static_writer = list.writer(allocator);
+        try static_writer.print("<title>{s}</title>\n", .{title});
+        self.writeToSvgFile(try list.toOwnedSlice(allocator));
     }
 
     pub fn endSvgGroup(self: SvgContainer) !void {
         try self.writeToSvgFile("</g>\n");
     }
 
-    pub fn appendFillColor(color: SvgColorType, buf: []u8) ![]u8 {
-        const written = switch (color) {
-            .named => |name| try std.fmt.bufPrint(
-                buf,
-                " fill=\"{s}\"",
-                .{name},
-            ),
-            .rgb => |rgb| try std.fmt.bufPrint(
-                buf,
-                " fill=\"rgb({d},{d},{d})\"",
-                .{ rgb.r, rgb.g, rgb.b },
-            ),
-            .none => try std.fmt.bufPrint(
-                buf,
-                " />\n",
-                .{},
-            ),
-        };
-        return written;
-    }
-
-    pub fn appendFillColorWriter(color: SvgColorType, my_writer: anytype) !void {
+    pub fn appendFillColor(color: SvgColorType, my_writer: anytype) !void {
         switch (color) {
             .named => |name| try my_writer.print(
                 " fill=\"{s}\"",
@@ -97,7 +83,7 @@ const SvgContainer = struct {
             ),
             .rgb => |rgb| try my_writer.print(
                 " fill=\"rgb({d},{d},{d})\"",
-                                               .{ rgb.r, rgb.g, rgb.b },
+                .{ rgb.r, rgb.g, rgb.b },
             ),
             .none => try my_writer.print(
                 " />\n",
@@ -106,28 +92,7 @@ const SvgContainer = struct {
         }
     }
 
-    pub fn appendStrokeColor(color: SvgColorType, buf: []u8) ![]u8 {
-        const written = switch (color) {
-            .named => |name| try std.fmt.bufPrint(
-                buf,
-                " stroke=\"{s}\"",
-                .{name},
-            ),
-            .rgb => |rgb| try std.fmt.bufPrint(
-                buf,
-                " stroke=\"rgb({d},{d},{d})\"",
-                .{ rgb.r, rgb.g, rgb.b },
-            ),
-            .none => try std.fmt.bufPrint(
-                buf,
-                " />\n",
-                .{},
-            ),
-        };
-        return written;
-    }
-
-    pub fn appendStrokeColorWriter(color: SvgColorType, my_writer: anytype) !void {
+    pub fn appendStrokeColor(color: SvgColorType, my_writer: anytype) !void {
         switch (color) {
             .named => |name| try my_writer.print(
                 " stroke=\"{s}\"",
@@ -135,7 +100,7 @@ const SvgContainer = struct {
             ),
             .rgb => |rgb| try my_writer.print(
                 " stroke=\"rgb({d},{d},{d})\"",
-                                               .{ rgb.r, rgb.g, rgb.b },
+                .{ rgb.r, rgb.g, rgb.b },
             ),
             .none => try my_writer.print(
                 " />\n",
@@ -144,57 +109,29 @@ const SvgContainer = struct {
         }
     }
 
-    pub fn appendTagClose(buf: []u8) ![]u8 {
-        const written = try std.fmt.bufPrint(
-            buf,
-            "/>\n",
-            .{},
-        );
-        return written;
-    }
-
-    pub fn appendTagCloseWriter(my_writer: anytype) !void {
+    pub fn appendTagClose(my_writer: anytype) !void {
         try my_writer.print(
             "/>\n",
             .{},
         );
     }
 
-    pub fn appendRectCornerRadius(rx: f32, ry: f32, buf: []u8) ![]u8 {
-        const written = try std.fmt.bufPrint(
-            buf,
+    pub fn appendRectCornerRadius(rx: f32, ry: f32, my_writer: anytype) !void {
+        try my_writer.print(
             " rx=\"{d}\" ry=\"{d}\"",
             .{ rx, ry },
         );
-        return written;
     }
 
-    pub fn appendStroke(stroke_config: SvgStrokeConfig, buf: []u8) !usize {
-        var written_len: usize = 0;
-        const written = try appendStrokeColor(stroke_config.stroke_color, buf);
-        written_len += written.len;
-        const stroke_width_written = try std.fmt.bufPrint(
-            buf[written_len..],
-            " stroke-width=\"{d}\"",
-            .{stroke_config.stroke_width},
-        );
-        return written_len + stroke_width_written.len;
-    }
-
-    pub fn appendStrokeWriter(stroke_config: SvgStrokeConfig, my_writer: anytype) !void {
-        try appendStrokeColorWriter(stroke_config.stroke_color, my_writer);
+    pub fn appendStroke(stroke_config: SvgStrokeConfig, my_writer: anytype) !void {
+        try appendStrokeColor(stroke_config.stroke_color, my_writer);
         try my_writer.print(
             " stroke-width=\"{d}\"",
             .{stroke_config.stroke_width},
         );
     }
 
-    pub fn formatSvgAnimate(animate: SvgAnimateConfig, buf: []u8) ![]u8 {
-        const written = try std.fmt.bufPrint(buf, "<animate attributeName=\"{s}\" values=\"{s}\" dur=\"{d}s\" repeatCount=\"{s}\"/>", .{ animate.attribute_name, animate.values, animate.duration, animate.repeat_count });
-        return written;
-    }
-
-    pub fn formatSvgAnimateWriter(animate: SvgAnimateConfig, my_writer: anytype) !void {
+    pub fn formatSvgAnimate(animate: SvgAnimateConfig, my_writer: anytype) !void {
         try my_writer.print("<animate attributeName=\"{s}\" values=\"{s}\" dur=\"{d}s\" repeatCount=\"{s}\"/>\n", .{ animate.attribute_name, animate.values, animate.duration, animate.repeat_count });
     }
 
@@ -202,25 +139,57 @@ const SvgContainer = struct {
         // Formats into the stack-allocated buffer
         try my_writer.print("<circle cx=\"{d}\" cy=\"{d}\" r=\"{d}\"", .{ circle.x, circle.y, circle.radius });
 
-        try appendFillColorWriter(circle.color, my_writer);
+        try appendFillColor(circle.color, my_writer);
 
         if (circle.stroke_config.stroke_enabled) {
-            try appendStrokeWriter(circle.stroke_config, my_writer);
+            try appendStroke(circle.stroke_config, my_writer);
         }
 
         if (!circle.animate_config.enabled) {
-            try appendTagCloseWriter(my_writer);
+            try appendTagClose(my_writer);
         } else {
             // Close the opening tag and add animation element
             try my_writer.print(">\n", .{});
 
-            try formatSvgAnimateWriter(circle.animate_config, my_writer);
+            try formatSvgAnimate(circle.animate_config, my_writer);
 
             try my_writer.print("</circle>\n", .{});
         }
     }
 
     pub fn addSvgCircle(self: SvgContainer, circle: SvgCircle) !void {
+        // Formats into the stack-allocated buffer
+        var buffer: [1024]u8 = undefined;
+        var fba = std.heap.FixedBufferAllocator.init(buffer[0..]);
+        const allocator = fba.allocator();
+
+        var list: std.ArrayList(u8) = .empty;
+        defer list.deinit(allocator);
+        try list.ensureTotalCapacity(allocator, buffer.len / 2);
+        var static_writer = list.writer(allocator);
+
+        try formatSvgCircle(circle, &static_writer);
+        try self.writeToSvgFile(try list.toOwnedSlice(allocator));
+    }
+
+    pub fn formatSvgRectangle(rect: SvgRect, my_writer: anytype) !void {
+        // not implemented
+        try my_writer.print("<rect x=\"{d}\" y=\"{d}\" width=\"{d}\" height=\"{d}\"", .{ rect.x, rect.y, rect.width, rect.height });
+
+        if (rect.round_rect) {
+            try appendRectCornerRadius(rect.rx, rect.ry, my_writer);
+        }
+
+        try appendFillColor(rect.color, my_writer);
+
+        if (rect.stroke_config.stroke_enabled) {
+            try appendStroke(rect.stroke_config, my_writer);
+        }
+
+        try appendTagClose(my_writer);
+    }
+
+    pub fn addSvgRect(self: SvgContainer, rect: SvgRect) !void {
         // Formats into the stack-allocated buffer
         var buffer: [512]u8 = undefined;
         var fba = std.heap.FixedBufferAllocator.init(buffer[0..]);
@@ -230,44 +199,8 @@ const SvgContainer = struct {
         defer list.deinit(allocator);
         var static_writer = list.writer(allocator);
 
-        try formatSvgCircle(circle, &static_writer);
+        try formatSvgRectangle(rect, &static_writer);
         try self.writeToSvgFile(try list.toOwnedSlice(allocator));
-    }
-
-    pub fn formatSvgRectangle(rect: SvgRect, buf: []u8) ![]u8 {
-        // not implemented
-        var idx: usize = 0;
-        {
-            const written = try std.fmt.bufPrint(buf, "<rect x=\"{d}\" y=\"{d}\" width=\"{d}\" height=\"{d}\"", .{ rect.x, rect.y, rect.width, rect.height });
-            idx += written.len;
-        }
-
-        if (rect.round_rect) {
-            const written = try appendRectCornerRadius(rect.rx, rect.ry, buf[idx..]);
-            idx += written.len;
-        }
-
-        {
-            const written = try appendFillColor(rect.color, buf[idx..]);
-            idx += written.len;
-        }
-
-        if (rect.stroke_config.stroke_enabled) {
-            idx += try appendStroke(rect.stroke_config, buf[idx..]);
-        }
-
-        {
-            const written = try appendTagClose(buf[idx..]);
-            idx += written.len;
-        }
-        return buf[0..idx];
-    }
-
-    pub fn addSvgRect(self: SvgContainer, rect: SvgRect) !void {
-        // Formats into the stack-allocated buffer
-        var svg_writer_buf = [_]u8{0} ** 256;
-        const written = try formatSvgRectangle(rect, &svg_writer_buf);
-        try self.writeToSvgFile(written);
     }
 
     pub fn closeSvgFile(self: SvgContainer) !void {
@@ -368,7 +301,7 @@ pub fn main() !void {
         // try graphing
         const square = SvgRect.buildSvgRect(0, 0, 100, 100, SvgColorType{ .named = "azure" });
         try svg_container.addSvgRect(square);
-        const num_points = 100;
+        const num_points = 1000;
         for (0..num_points) |i| {
             const rand_color = getRandomNamedSvgColor();
             const circle_size = 0.6;
@@ -382,7 +315,7 @@ pub fn main() !void {
             // This makes the wave pattern appear to move
             const phase_shift = 2.0 * std.math.pi; // One complete wavelength travels past
 
-            var values_buf = [_]u8{0} ** 128;
+            var values_buf = [_]u8{0} ** 64;
             const values = try std.fmt.bufPrint(&values_buf, "{d:.2};{d:.2};{d:.2};{d:.2};{d:.2}", .{
                 std.math.sin(phase) * amplitude + center_y,
                 std.math.sin(phase + phase_shift * 0.25) * amplitude + center_y,
@@ -391,9 +324,6 @@ pub fn main() !void {
                 std.math.sin(phase + phase_shift) * amplitude + center_y,
             });
 
-            const stroke_width = 0.1;
-            const stroke_config = SvgStrokeConfig{ .stroke_enabled = true, .stroke_dasharray = false, .stroke_width = stroke_width };
-
             const animate_config = SvgAnimateConfig{
                 .enabled = true,
                 .attribute_name = "cy",
@@ -401,6 +331,9 @@ pub fn main() !void {
                 .duration = 6.0,
                 .repeat_count = "indefinite",
             };
+
+            const stroke_width = 0.1;
+            const stroke_config = SvgStrokeConfig{ .stroke_enabled = true, .stroke_dasharray = false, .stroke_width = stroke_width };
 
             const my_circle = SvgCircle{
                 .x = x_pos,
