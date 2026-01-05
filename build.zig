@@ -80,9 +80,10 @@ pub fn build(b: *std.Build) void {
                 // importing modules from different packages).
                 .{ .name = "zig_svg_graph", .module = mod },
             },
+            .link_libc = true,
         }),
     });
-
+    exe.linkSystemLibrary("potrace");
     // This declares intent for the executable to be installed into the
     // install prefix when running `zig build` (i.e. when executing the default
     // step). By default the install prefix is `zig-out/` but can be overridden

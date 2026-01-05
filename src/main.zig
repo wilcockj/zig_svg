@@ -1,4 +1,8 @@
 const std = @import("std");
+const potrace = @cImport({
+    @cInclude("potracelib.h");
+});
+
 const zig_svg_graph = @import("zig_svg_graph");
 
 const cssColorKeywords = [_][]const u8{
@@ -268,6 +272,13 @@ const SvgRect = struct {
         return my_rect;
     }
 };
+
+pub fn potrace_bitmap() !void {
+    const po_par = potrace.potrace_param_default();
+    var bitmap = potrace.potrace_bitmap_t{ .w = 0, .h = 0, .dy = 0, .map = 0 };
+    const ret = potrace.potrace_trace(po_par, &bitmap);
+    std.debug.print("Got return {d}, paths at {*}\n", .{ ret.*.status, ret.*.plist });
+}
 
 pub fn main() !void {
     const rand = std.crypto.random;
