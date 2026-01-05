@@ -273,11 +273,12 @@ const SvgRect = struct {
     }
 };
 
-pub fn potrace_bitmap() !void {
+pub fn potrace_bitmap() !u32 {
     const po_par = potrace.potrace_param_default();
     var bitmap = potrace.potrace_bitmap_t{ .w = 0, .h = 0, .dy = 0, .map = 0 };
     const ret = potrace.potrace_trace(po_par, &bitmap);
-    std.debug.print("Got return {d}, paths at {*}\n", .{ ret.*.status, ret.*.plist });
+    //std.debug.print("Got return {d}, paths at {*}\n", .{ ret.*.status, ret.*.plist });
+    return @intCast(ret.*.status);
 }
 
 pub fn main() !void {
@@ -392,4 +393,8 @@ test "svg circle rgb color test" {
     try SvgContainer.formatSvgCircle(my_circle, &static_writer);
 
     try std.testing.expectEqualStrings("<circle cx=\"100\" cy=\"100\" r=\"100\" fill=\"rgb(100,50,50)\"/>\n", try list.toOwnedSlice(allocator));
+}
+
+test "potrace test" {
+    try std.testing.expectEqual(potrace_bitmap(), 0);
 }
